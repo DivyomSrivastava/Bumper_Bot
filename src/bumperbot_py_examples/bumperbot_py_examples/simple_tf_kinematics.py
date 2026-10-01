@@ -1,8 +1,11 @@
 import rclpy
 from rclpy.node import Node
 from tf2_ros.static_transform_broadcaster import StaticTransformBroadcaster
-from tf2_ros import TransformBroadcaster
+from tf2_ros import TransformBroadcaster, TransformException
+from tf2_ros.buffer import Buffer
+from tf2_ros.transform_listener import TransformListener
 from geometry_msgs.msg import TransformStamped
+from bumperbot_msgs.srv import GetTransform
 
 
 class SimpleTFKinnematics(Node):
@@ -19,6 +22,8 @@ class SimpleTFKinnematics(Node):
         self.x_increment_ = 0.05
         self.last_x_ = 0.0              # To know the last position of x, to calculate the TF
 
+        self.tf_buffer_ = Buffer()
+        self.tf_listener_ = TransformListener(self.tf_buffer_, self)
 
 
         self.static_transform_stamped_.header.stamp = self.get_clock().now().to_msg()
@@ -52,6 +57,9 @@ class SimpleTFKinnematics(Node):
         self.timer_ = self.create_timer(0.1, self.timerCallback)
 
 
+        self.get_transform_srv_ =self.create_service(GetTransform,"get_transform",self.getTransformCallback)
+
+
     def timerCallback(self):
         self.dynamic_transform_stamped_.header.stamp = self.get_clock().now().to_msg()
         self.dynamic_transform_stamped_.header.frame_id = "odom"
@@ -68,6 +76,21 @@ class SimpleTFKinnematics(Node):
         self.dynamic_tf_brodcaster_.sendTransform(self.dynamic_transform_stamped_)
 
         self.last_x_ = self.dynamic_transform_stamped_.transform.translation.x
+
+
+    def getTransformCallback(self, req, res):
+        self.get_logger().info("reuested transform btw %s and %s" % (req.frame_id, req.child_frame_id))
+        requested_transform = TransformStamped()
+        try:
+            requested_transform = self.tf_buffer_.lookup_transform(req.frame_id, req.child_frame_id, rclpy.time.Time())
+        except TransformException as e:
+            self.get_logger().error("Error occurred while looking up transform: %s & %s" % (req.frame_id, req.child_frame_id))
+            res.success = False
+            return res
+
+        res.transform = requested_transform
+        res.success = True
+        return res
 
 def main():
     rclpy.init()
