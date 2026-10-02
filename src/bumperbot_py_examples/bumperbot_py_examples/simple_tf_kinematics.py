@@ -6,6 +6,7 @@ from tf2_ros.buffer import Buffer
 from tf2_ros.transform_listener import TransformListener
 from geometry_msgs.msg import TransformStamped
 from bumperbot_msgs.srv import GetTransform
+from tf_transformations import quaternion_from_euler, quaternion_multiply, quaternion_inverse
 
 
 class SimpleTFKinnematics(Node):
@@ -19,9 +20,14 @@ class SimpleTFKinnematics(Node):
         self.static_transform_stamped_ = TransformStamped()
         self.dynamic_transform_stamped_ = TransformStamped()
 
-        self.x_increment_ = 0.05
+        self.x_increment_ = 0.05    #translation increment in x-axis
         self.last_x_ = 0.0              # To know the last position of x, to calculate the TF
 
+        self.rotations_counter_ = 0             # for euler to quaternion conversion, to know how many rotations have been done
+        self.last_orientation_ = quaternion_from_euler(0, 0, 0)   # To convert euler to quaternion.
+        self.orientation_increment_ = quaternion_from_euler(0, 0, 0.05) # rotation increment in z-axis(0.05 radians whenever timer expires)
+
+        
         self.tf_buffer_ = Buffer()
         self.tf_listener_ = TransformListener(self.tf_buffer_, self)
 
@@ -67,15 +73,23 @@ class SimpleTFKinnematics(Node):
         self.dynamic_transform_stamped_.transform.translation.x = self.last_x_ + self.x_increment_
         self.dynamic_transform_stamped_.transform.translation.y = 0.0
         self.dynamic_transform_stamped_.transform.translation.z = 0.0
-
-        self.dynamic_transform_stamped_.transform._rotation.x = 0.0
-        self.dynamic_transform_stamped_.transform._rotation.y = 0.0
-        self.dynamic_transform_stamped_.transform._rotation.z = 0.0
-        self.dynamic_transform_stamped_.transform._rotation.w = 1.0
+        q = quaternion_multiply(self.last_orientation_, self.orientation_increment_) 
+        self.dynamic_transform_stamped_.transform._rotation.x = q[0]
+        self.dynamic_transform_stamped_.transform._rotation.y = q[1]
+        self.dynamic_transform_stamped_.transform._rotation.z = q[2]
+        self.dynamic_transform_stamped_.transform._rotation.w = q[3]
 
         self.dynamic_tf_brodcaster_.sendTransform(self.dynamic_transform_stamped_)
 
         self.last_x_ = self.dynamic_transform_stamped_.transform.translation.x
+
+        self.rotations_counter_ += 1
+        self.last_orientation_ = q
+
+        if self.rotations_counter_ >= 100:
+            self.orientation_increment_ = quaternion_inverse(self.orientation_increment_)
+            self.rotations_counter_ = 0
+
 
 
     def getTransformCallback(self, req, res):
