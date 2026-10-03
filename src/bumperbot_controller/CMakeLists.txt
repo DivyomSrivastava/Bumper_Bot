@@ -16,6 +16,7 @@ install(
   PROGRAMS
     ${PROJECT_NAME}/simple_controller.py
   DESTINATION lib/${PROJECT_NAME}
+  RENAME simple_controller
 )
 
 ament_package()
