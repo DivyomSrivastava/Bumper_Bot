@@ -31,7 +31,7 @@
 13. [Practice Nodes (`bumperbot_py_examples`)](#13-practice-nodes-bumperbot_py_examples)
 14. [Git Workflow (`gitsync.sh`)](#14-git-workflow-gitsyncsh)
 15. [Troubleshooting](#15-troubleshooting)
-16. [Credits and License](#16-credits-and-license)
+16. [Author and License](#16-author-and-license)
 
 ---
 
@@ -42,9 +42,9 @@
 - A **URDF/Xacro** description with real STL meshes, inertial properties and collision geometry.
 - A **Gazebo Sim** launch setup that spawns the robot into an empty world.
 - A **`ros2_control`** hardware interface exposing both wheel joints as velocity-controlled joints.
-- **Two interchangeable drive controllers**: a custom Python kinematics node (`simple_controller`) and the stock `diff_drive_controller/DiffDriveController`.
+- **Two interchangeable drive controllers**: a custom Python node (`simple_controller`) that does both inverse kinematics (velocity command → wheel speeds) and forward kinematics (wheel encoders → odometry and `odom → base_footprint` TF), and the stock `diff_drive_controller/DiffDriveController`.
 - **Joystick teleoperation** through `joy` and `joy_teleop`.
-- A set of **`rclpy` practice nodes** (pub/sub, parameters, services, TF, turtlesim kinematics) used to build up the fundamentals.
+- A set of **`rclpy` practice nodes** (pub/sub, parameters, services, TF, turtlesim kinematics) and two custom service interfaces (`AddTwoInts`, `GetTransform`) used to build up the fundamentals.
 
 The workspace targets **ROS 2 Jazzy** on **Ubuntu 24.04**. Launch files also detect `humble` and switch to the Ignition plugins automatically.
 
@@ -57,11 +57,11 @@ The workspace targets **ROS 2 Jazzy** on **Ubuntu 24.04**. Launch files also det
 | **Modelling** | Xacro-based URDF with `base_footprint → base_link`, two continuous wheel joints, two fixed casters, inertias, and mesh visuals |
 | **Simulation** | Gazebo Sim (`gz_sim`) launch with `-r empty.sdf`, robot spawned from `/robot_description` |
 | **Hardware abstraction** | `ros2_control` system with velocity command interfaces (clamped to ±1) and position and velocity state interfaces |
-| **Custom controller** | Python node that converts `TwistStamped` into left/right wheel velocities through an inverse differential-drive matrix |
+| **Custom controller** | Python node that converts `TwistStamped` into left/right wheel velocities (inverse differential-drive matrix) **and** integrates wheel positions from `/joint_states` into odometry (`nav_msgs/Odometry` + TF) |
 | **Stock controller** | `DiffDriveController` with velocity and acceleration limits, covariance settings, odometry and odom TF |
 | **Teleop** | Gamepad with a deadman button, mapped to linear X and angular Z |
 | **Distro awareness** | Launch files choose Gazebo Sim or Ignition plugins based on `$ROS_DISTRO` |
-| **Learning nodes** | 7 `rclpy` examples plus a custom `AddTwoInts` service interface |
+| **Learning nodes** | 7 `rclpy` examples plus custom `AddTwoInts` and `GetTransform` service interfaces |
 
 ---
 
@@ -76,8 +76,8 @@ bumperbot_ws/
 ├── gitsync.sh                         # One-command "add, commit and push" helper
 │
 ├── .vscode/
-│   ├── c_cpp_properties.json          # C/C++ IntelliSense configuration for ROS 2
-│   └── settings.json                  # ROS2 distro = jazzy, Python analysis paths
+│   ├── c_cpp_properties.json          # C/C++ IntelliSense configuration for ROS 2 (paths point at /home/divyom/...; edit for your machine)
+│   └── settings.json                  # ROS2 distro = jazzy, Python analysis paths (also machine-specific)
 │
 └── src/
     │
@@ -107,7 +107,7 @@ bumperbot_ws/
     │   ├── package.xml
     │   ├── bumperbot_controller/
     │   │   ├── __init__.py
-    │   │   └── simple_controller.py   # Custom differential-drive kinematics node
+    │   │   └── simple_controller.py   # Custom node: inverse kinematics + wheel odometry + TF
     │   ├── config/
     │   │   ├── bumperbot_controllers.yaml  # controller_manager + DiffDrive + velocity controller
     │   │   ├── joy_config.yaml             # joy_node parameters
@@ -120,7 +120,8 @@ bumperbot_ws/
     │   ├── CMakeLists.txt
     │   ├── package.xml
     │   └── srv/
-    │       └── AddTwoInts.srv         # int64 a, b → int64 sum
+    │       ├── AddTwoInts.srv         # int64 a, b → int64 sum
+    │       └── GetTransform.srv       # frame_id, child_frame_id → TransformStamped + success
     │
     ├── bumperbot_py_examples/         # ── rclpy PRACTICE NODES (ament_python) ──
     │   ├── package.xml
@@ -135,7 +136,7 @@ bumperbot_ws/
     │   │   ├── simple_parameter.py            # Parameters with validation callback
     │   │   ├── simple_service_server.py       # add_two_ints server
     │   │   ├── simple_service_client.py       # add_two_ints client (CLI args)
-    │   │   ├── simple_tf_kinematics.py        # Static + dynamic TF broadcasting
+    │   │   ├── simple_tf_kinematics.py        # Static + dynamic TF broadcasting + get_transform service
     │   │   └── simple_turtlesim_kinematics.py # Relative pose of turtle2 w.r.t. turtle1
     │   └── test/
     │       ├── test_copyright.py
@@ -155,7 +156,8 @@ bumperbot_ws/
 
 ```text
 odom
- └── base_footprint            (published by DiffDriveController when enable_odom_tf = true)
+ └── base_footprint            (published by DiffDriveController when enable_odom_tf = true,
+      │                          or by simple_controller when the custom controller runs)
       └── base_link            (fixed, z = 0.033 m)
            ├── wheel_left_link     (continuous, y = +0.0701 m)
            ├── wheel_right_link    (continuous, y = −0.0701 m)
@@ -187,16 +189,16 @@ Everything about how the robot **moves**.
 
 | File | Role |
 | --- | --- |
-| `bumperbot_controller/simple_controller.py` | Custom node implementing the differential-drive kinematic model (details in [section 7](#7-controllers-and-kinematics)). |
+| `bumperbot_controller/simple_controller.py` | Custom node implementing the differential-drive kinematic model and wheel odometry (details in [section 7](#7-controllers-and-kinematics)). |
 | `config/bumperbot_controllers.yaml` | Defines the controller manager at 100 Hz, registers `bumperbot_controller` (DiffDrive), `joint_state_broadcaster` and `simple_velocity_controller`, and holds all of their parameters. |
 | `config/joy_config.yaml` | `joy_node` settings: device 0, deadzone 0.5, autorepeat 20 Hz. |
-| `config/joy_teleop.yaml` | Maps joystick axes and a deadman button to `TwistStamped` commands. |
+| `config/joy_teleop.yaml` | Maps joystick axes and a deadman button (button 6) to `TwistStamped` commands. |
 | `launch/controller.launch.py` | Spawns the broadcaster and the chosen controller. Arguments in [section 12](#12-configuration-reference). |
 | `launch/joystick_teleop.launch.py` | Starts `joy_node` and `joy_teleop` with the YAML configs above. |
 
 ### 5.3 `bumperbot_msgs`
 
-Custom interface package. Currently provides `AddTwoInts.srv` (`int64 a`, `int64 b` → `int64 sum`), generated with `rosidl_default_generators` and used by the service examples.
+Custom interface package, generated with `rosidl_default_generators`. It provides `AddTwoInts.srv` (`int64 a`, `int64 b` → `int64 sum`) for the basic service examples and `GetTransform.srv` (`frame_id`, `child_frame_id` → `geometry_msgs/TransformStamped transform`, `bool success`) used by `simple_tf_kinematics` to expose TF lookups as a service.
 
 ### 5.4 `bumperbot_py_examples`
 
@@ -264,6 +266,8 @@ In matrix form:
 | **Custom** (default) | `use_simple_controller:=True` | `bumperbot_controller/cmd_vel` (`TwistStamped`) | `simple_controller` → `simple_velocity_controller/commands` → `JointGroupVelocityController` |
 | **Stock** | `use_simple_controller:=False` | `bumperbot_controller/cmd_vel` (`TwistStamped`) | `DiffDriveController` with limits, odometry and TF |
 
+> ℹ️ `controller.launch.py` starts the Python node only when `use_python:=True`. With the default (`use_python:=False`) it looks for a C++ executable called `simple_controller`, which this workspace does not contain, so always pass `use_python:=True` for the custom mode.
+
 Stock controller limits (from `bumperbot_controllers.yaml`):
 
 | Axis | Max velocity | Min velocity | Max acceleration | Min acceleration |
@@ -272,6 +276,27 @@ Stock controller limits (from `bumperbot_controllers.yaml`):
 | Angular Z | 1.7 rad/s | −1.7 rad/s (default) | 1.5 rad/s² | −1.5 rad/s² (default) |
 
 Other stock settings: `cmd_vel_timeout = 0.5 s`, `publish_rate = 50 Hz`, `base_frame_id = base_footprint`, `use_stamped_vel = true`, `enable_odom_tf = true`, `publish_limited_velocity = true`.
+
+### 7.3 Wheel odometry in `simple_controller`
+
+Besides converting commands, `simple_controller.py` estimates the robot pose from the wheel encoders:
+
+1. It subscribes to `/joint_states` and uses the first message only to initialise the previous wheel positions and timestamp (so `dt` is never measured from node start-up). Messages with fewer than two positions, or with `dt ≤ 0`, are skipped.
+2. For each new message it computes the wheel position changes `Δφ_L`, `Δφ_R` and the wheel speeds `Δφ / dt`.
+3. It derives the robot velocities and the pose increment:
+
+```text
+v     = r/2 · (ω_R + ω_L)         Δs = r/2 · (Δφ_R + Δφ_L)
+ω     = r/L · (ω_R − ω_L)         Δθ = r/L · (Δφ_R − Δφ_L)
+
+θ ← θ + Δθ
+x ← x + Δs · cos θ
+y ← y + Δs · sin θ
+```
+
+4. It converts `θ` to a quaternion with `tf_transformations` and publishes a `nav_msgs/Odometry` message on `bumperbot_controller/odom` (frame `odom`, child frame `base_footprint`) together with the matching `odom → base_footprint` transform.
+
+Because the node reads `joint_states[0]` as the left wheel and `joint_states[1]` as the right wheel, it relies on the joint order published by `joint_state_broadcaster` (`wheel_left_joint`, `wheel_right_joint`).
 
 ---
 
@@ -342,7 +367,7 @@ ros2 launch bumperbot_controller controller.launch.py use_simple_controller:=Fal
 ros2 launch bumperbot_controller joystick_teleop.launch.py
 ```
 
-Hold the deadman button (button index 5), then use axis 1 for forward/back and axis 3 for turning.
+Hold the deadman button (button index 6), then use axis 1 for forward/back and axis 3 for turning.
 
 **From the command line:**
 
@@ -366,12 +391,14 @@ ros2 topic pub -r 10 /bumperbot_controller/cmd_vel geometry_msgs/msg/TwistStampe
 | Name | Type | Direction | Provided by |
 | --- | --- | --- | --- |
 | `bumperbot_controller/cmd_vel` | `geometry_msgs/TwistStamped` | in | `joy_teleop`, CLI, or any node |
+| `bumperbot_controller/odom` | `nav_msgs/Odometry` | out | `simple_controller` (custom mode) |
 | `simple_velocity_controller/commands` | `std_msgs/Float64MultiArray` | out | `simple_controller` → `JointGroupVelocityController` |
-| `/joint_states` | `sensor_msgs/JointState` | out | `joint_state_broadcaster` |
+| `/joint_states` | `sensor_msgs/JointState` | out (read by `simple_controller` for odometry) | `joint_state_broadcaster` |
 | `/robot_description` | `std_msgs/String` | out | `robot_state_publisher` |
 | `/tf`, `/tf_static` | `tf2_msgs/TFMessage` | out | `robot_state_publisher`, `DiffDriveController` |
 | `/joy` | `sensor_msgs/Joy` | out | `joy_node` |
 | `add_two_ints` | `bumperbot_msgs/srv/AddTwoInts` | service | `simple_service_server` |
+| `get_transform` | `bumperbot_msgs/srv/GetTransform` | service | `simple_tf_kinematics` |
 | `chatter` | `std_msgs/String` | pub/sub | `simple_publisher` / `simple_subscriber` |
 
 ---
@@ -394,7 +421,7 @@ ros2 topic pub -r 10 /bumperbot_controller/cmd_vel geometry_msgs/msg/TwistStampe
 | --- | --- | --- | --- |
 | `twist-linear-x` | 1 | 1.0 | Forward/back |
 | `twist-angular-z` | 3 | 8.0 | Turning |
-| Deadman | button 5 | n/a | Must be held to send commands |
+| Deadman | button 6 | n/a | Must be held to send commands |
 
 Axis and button numbers depend on your controller. Check yours with `ros2 topic echo /joy`.
 
@@ -413,7 +440,7 @@ Axis and button numbers depend on your controller. Check yours with `ros2 topic 
 | `simple_parameter` | Parameter declaration and validation (`simple_int_param` ≥ 0, `simple_string_param` ≤ 20 chars) | `ros2 run bumperbot_py_examples simple_parameter` |
 | `simple_service_server` | Service server | `ros2 run bumperbot_py_examples simple_service_server` |
 | `simple_service_client` | Async service client | `ros2 run bumperbot_py_examples simple_service_client 3 4` |
-| `simple_tf_kinematics` | Static and dynamic TF broadcasting (`odom → bumperbot_base → bumperbot_top`) | `ros2 run bumperbot_py_examples simple_tf_kinematics` |
+| `simple_tf_kinematics` | Static and dynamic TF broadcasting (`odom → bumperbot_base → bumperbot_top`) plus a `get_transform` service that wraps a TF lookup | `ros2 run bumperbot_py_examples simple_tf_kinematics` |
 | `simple_turtlesim_kinematics` | Relative translation and rotation between two turtles | `ros2 run bumperbot_py_examples simple_turtlesim_kinematics` |
 
 For the turtlesim example, spawn a second turtle first:
@@ -446,19 +473,20 @@ It prints `Nothing new to commit.` if the tree is clean, and then still pushes.
 | `rosdep` fails on the key `sys` | `bumperbot_py_examples/package.xml` lists `<exec_depend>sys</exec_depend>`. `sys` is part of Python and is not a rosdep key; delete that line. |
 | Robot is invisible or meshes missing in Gazebo | Source the workspace before launching so `GZ_SIM_RESOURCE_PATH` resolves to the install share folder. |
 | Robot does not move in Gazebo | Controllers are not running. Start `controller.launch.py` in a second terminal and check `ros2 control list_controllers`. |
-| Gamepad does nothing | Hold the deadman button (index 5) and verify axis and button numbers with `ros2 topic echo /joy`. |
+| Gamepad does nothing | Hold the deadman button (index 6) and verify axis and button numbers with `ros2 topic echo /joy`. |
 | Odometry drifts in turns | Check that `wheel_separation` and `wheel_radius` match the model (see the warning in [section 6.2](#62-key-physical-parameters)). |
+| Terminal flooded with `x:`, `y:`, `theta:` lines | `simple_controller` logs the pose at INFO level on every `/joint_states` message. Lower the log level or remove those `get_logger().info` calls once odometry is verified. |
+| Robot is very slow in Gazebo | `bumperbot_ros2_control.xacro` limits each wheel velocity command to ±1. Raise `min`/`max` if the wheels cannot reach the speeds you command. |
 | Stray `src/build`, `src/install`, `src/log` | `colcon build` was run inside `src/`. Delete them and build from the workspace root. |
 | VS Code is slow or the repo is huge | The IntelliSense cache (`.vscode/ipch`, `browse.vc.db*`) is git-ignored. Do not remove those lines from `.gitignore`. |
 
 ---
 
-## 16. Credits and License
+## 16. Author and License
 
-- Based on the **Bumperbot** project by **Antonio Brandi**. The `bumperbot_controller` package retains his Apache-2.0 attribution.
-- Workspace assembled, extended and maintained by **[Divyom Srivastava](https://github.com/DivyomSrivastava)**.
+Workspace built and maintained by **[Divyom Srivastava](https://github.com/DivyomSrivastava)**.
 
-Parts of the workspace are Apache-2.0 (`bumperbot_controller`). Other packages still contain `TODO` license declarations; add a `LICENSE` file before redistributing.
+The `bumperbot_controller` package is declared Apache-2.0 in its `package.xml`. The other packages still contain `TODO` license declarations; add a `LICENSE` file before redistributing.
 
 <div align="center">
 
