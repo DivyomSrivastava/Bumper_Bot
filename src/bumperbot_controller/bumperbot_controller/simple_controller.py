@@ -117,10 +117,10 @@ class SimpleController(Node):
         self.odom_msg_.twist.twist.angular.z = angular
         self.odom_pub_.publish(self.odom_msg_)
 
-        self.get_logger().info("Publishing odometry: x: %f, y: %f, theta: %f" % (self.x_, self.y_, self.theta_))
-        self.get_logger().info("Publishing odometry: linear: %f, angular: %f" % (linear, angular))
+        #self.get_logger().info("x: %f, y: %f, theta: %f" % (self.x_, self.y_, self.theta_))
+        #self.get_logger().info("linear: %f, angular: %f" % (linear, angular))
 
-        # TF
+        #TF
         self.transform_stamped_.transform.translation.x = self.x_
         self.transform_stamped_.transform.translation.y = self.y_
         self.transform_stamped_.transform.rotation.x = q[0]
