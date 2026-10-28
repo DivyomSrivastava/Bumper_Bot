@@ -1,4 +1,3 @@
-
 cmake_minimum_required(VERSION 3.5)
 project(bumperbot_controller)
 
@@ -15,28 +14,35 @@ find_package(tf2 REQUIRED)
 find_package(Eigen3 REQUIRED)
 
 include_directories(include)
-include_directories(${EIGEN3_INCLUDE_DIR})
 
-# Install the Python package
+set(CPP_TARGETS "")
+
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/simple_controller.cpp)
+  add_executable(simple_controller src/simple_controller.cpp)
+  ament_target_dependencies(simple_controller rclcpp geometry_msgs std_msgs sensor_msgs nav_msgs tf2_ros tf2)
+  target_link_libraries(simple_controller Eigen3::Eigen)
+  list(APPEND CPP_TARGETS simple_controller)
+endif()
+
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/noisy_controller.cpp)
+  add_executable(noisy_controller src/noisy_controller.cpp)
+  ament_target_dependencies(noisy_controller rclcpp geometry_msgs sensor_msgs nav_msgs tf2_ros tf2)
+  list(APPEND CPP_TARGETS noisy_controller)
+endif()
+
 ament_python_install_package(${PROJECT_NAME})
 
-# Install header files
-install(
-  DIRECTORY include
-  DESTINATION include
-)
+install(DIRECTORY include DESTINATION include)
 
-# Install launch and configuration files
-install(
-  DIRECTORY launch config
-  DESTINATION share/${PROJECT_NAME}
-)
+if(CPP_TARGETS)
+  install(TARGETS ${CPP_TARGETS} DESTINATION lib/${PROJECT_NAME})
+endif()
 
-# Install Python controllers
-install(
-  PROGRAMS
-    ${PROJECT_NAME}/simple_controller.py
-    ${PROJECT_NAME}/noisy_controller.py
+install(DIRECTORY launch config DESTINATION share/${PROJECT_NAME})
+
+install(PROGRAMS
+  ${PROJECT_NAME}/simple_controller.py
+  ${PROJECT_NAME}/noisy_controller.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
