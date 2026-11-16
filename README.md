@@ -21,35 +21,30 @@ The goal is to understand a mobile robot's full software stack by building each 
 
 ## 🎬 Demo
 
+<div align="center">
+  <img src="assets/bumperbot_demo.gif" alt="Bumperbot driving in Gazebo from a velocity command" width="90%"><br>
+  <b>Driving in Gazebo with a velocity command</b><br>
+  <sub><code>ros2 topic pub</code> on <code>/bumperbot_controller/cmd_vel</code></sub>
+</div>
+
+<br>
+
 <table>
   <tr>
     <td align="center" width="50%">
-      <img src="docs/media/rviz.png" alt="Bumperbot in RViz" width="100%"><br>
+      <img src="assets/rviz_model.png" alt="Bumperbot in RViz" width="100%"><br>
       <b>RViz</b>: robot model and TF frames
     </td>
     <td align="center" width="50%">
-      <img src="docs/media/gazebo.png" alt="Bumperbot in Gazebo" width="100%"><br>
+      <img src="assets/gazebo_sim.png" alt="Bumperbot in Gazebo" width="100%"><br>
       <b>Gazebo Sim</b>: physics simulation
-    </td>
-  </tr>
-  <tr>
-    <td align="center" width="50%">
-      <img src="docs/media/velocity_command_demo.gif" alt="Driving with a velocity command" width="100%"><br>
-      <b>Driving with a velocity command</b><br>
-      <sub><code>ros2 topic pub</code> on <code>/bumperbot_controller/cmd_vel</code></sub>
-    </td>
-    <td align="center" width="50%">
-      <img src="docs/media/joystick_demo.gif" alt="Driving with a joystick" width="100%"><br>
-      <b>Driving with an external joystick</b><br>
-      <sub><code>joy</code> → <code>joy_teleop</code> → controller</sub>
     </td>
   </tr>
 </table>
 
-<!--
-For a full-length video, edit this README on github.com, drag the .mp4 into the editor,
-and paste the link GitHub generates on its own line here. GitHub renders it as a video player.
--->
+<p align="center">
+  <a href="assets/bumperbot_demo.mp4">▶ Watch the full-quality video</a>
+</p>
 
 ---
 
@@ -148,7 +143,7 @@ bumperbot_ws/
 ├── README.md
 ├── gitsync.sh                         # One-command "add, commit and push" helper
 ├── .gitignore
-├── docs/media/                        # Screenshots and demo GIFs used by this README
+├── assets/                            # Screenshots, demo GIF and video used by this README
 │
 └── src/
     ├── bumperbot_description/         # ── ROBOT MODEL (ament_cmake) ──
